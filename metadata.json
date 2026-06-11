@@ -1,0 +1,6 @@
+{
+  "name": "Attendr",
+  "description": "College attendance tracker with seamless timetable integration, drag-and-drop daily reordering, and direct end-of-class notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
