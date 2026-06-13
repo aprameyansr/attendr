@@ -436,6 +436,72 @@ fun SettingsScreen(
                 }
             }
 
+            // --- RESET SEMESTER DATA ---
+            item {
+                var showResetConfirmDialog by remember { mutableStateOf(false) }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+                        .testTag("reset_data_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("RESET SEMESTER DATA", color = ErrorColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Text("Crucial for starting a fresh semester. This will permanently erase all subjects, attendance logs, and custom schedules to restore defaults.", color = TextSecondaryColor, fontSize = 11.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Button(
+                            onClick = { showResetConfirmDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = ErrorColor),
+                            modifier = Modifier.fillMaxWidth().testTag("reset_data_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Filled.DeleteForever, contentDescription = "Reset", tint = Color.Black)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Reset All App Data", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (showResetConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showResetConfirmDialog = false },
+                        containerColor = SurfaceColor,
+                        title = { Text("Reset Entire Database?", color = Color.White, fontWeight = FontWeight.Bold) },
+                        text = {
+                            Text("This action is completely irreversible. You will lose all current course progression details, timetable allocations, and overridden days. Ensure you have exported a back-up if you wish to restore it. Do you want to proceed?", color = TextSecondaryColor, fontSize = 13.sp)
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.resetAllData()
+                                    showResetConfirmDialog = false
+                                    Toast.makeText(context, "Fresh semester initialized! All data cleared.", Toast.LENGTH_LONG).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = ErrorColor),
+                                modifier = Modifier.testTag("reset_confirm_confirm")
+                            ) {
+                                Text("Delete Everything", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = { showResetConfirmDialog = false },
+                                modifier = Modifier.testTag("reset_confirm_cancel")
+                            ) {
+                                Text("Cancel", color = TextSecondaryColor)
+                            }
+                        }
+                    )
+                }
+            }
+
             // --- BOTTOM BRANDING AREA ---
             item {
                 Spacer(modifier = Modifier.height(24.dp))
@@ -456,10 +522,10 @@ fun SettingsScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/placeholder-repo"))
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.github.com/aprameyansr/attendr"))
                                     context.startActivity(intent)
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "GitHub URL is a placeholder. You can replace this in SettingsScreen.kt!", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Unable to open GitHub link", Toast.LENGTH_SHORT).show()
                                 }
                             }
                             .padding(8.dp),

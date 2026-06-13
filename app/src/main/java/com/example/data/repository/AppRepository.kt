@@ -43,12 +43,13 @@ class AppRepository(val db: AppDatabase) {
         val periods = periodDao.getAllPeriods()
         if (periods.isEmpty()) {
             val defaultPeriods = listOf(
-                PeriodDefinition(periodNumber = 1, startTime = "09:00", endTime = "09:50"),
-                PeriodDefinition(periodNumber = 2, startTime = "10:00", endTime = "10:50"),
-                PeriodDefinition(periodNumber = 3, startTime = "11:00", endTime = "11:50"),
-                PeriodDefinition(periodNumber = 4, startTime = "12:00", endTime = "12:50"),
-                PeriodDefinition(periodNumber = 5, startTime = "14:00", endTime = "14:50"),
-                PeriodDefinition(periodNumber = 6, startTime = "15:00", endTime = "15:50")
+                PeriodDefinition(periodNumber = 1, startTime = "08:10", endTime = "09:00"),
+                PeriodDefinition(periodNumber = 2, startTime = "09:00", endTime = "09:50"),
+                PeriodDefinition(periodNumber = 3, startTime = "10:10", endTime = "11:00"),
+                PeriodDefinition(periodNumber = 4, startTime = "11:00", endTime = "11:50"),
+                PeriodDefinition(periodNumber = 5, startTime = "12:50", endTime = "13:40"),
+                PeriodDefinition(periodNumber = 6, startTime = "13:40", endTime = "14:30"),
+                PeriodDefinition(periodNumber = 7, startTime = "14:30", endTime = "15:20")
             )
             periodDao.insertPeriods(defaultPeriods)
         }
@@ -69,6 +70,11 @@ class AppRepository(val db: AppDatabase) {
         if (settingDao.getSetting("notifications_enabled") == null) {
             settingDao.insertSetting(SettingEntity("notifications_enabled", "true"))
         }
+    }
+
+    suspend fun resetAllData() = withContext(Dispatchers.IO) {
+        db.clearAllTables()
+        initializeDefaultsIfEmpty()
     }
 
     // --- Courses ---

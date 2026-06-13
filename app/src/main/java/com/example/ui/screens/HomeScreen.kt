@@ -52,11 +52,49 @@ fun HomeScreen(
     val coroutineScope = rememberCoroutineScope()
     
     val courseStatsList by viewModel.courseStats.collectAsState()
+    val timetableSlots by viewModel.timetableSlots.collectAsState()
     val undoBuffer by viewModel.undoBuffer.collectAsState()
     val settingsState by viewModel.settingsState.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var expandedCourseId by remember { mutableStateOf<Int?>(null) }
+
+    // Order subjects based on today's timetable slots order, inserting unscheduled at the bottom
+    val orderedCourseStatsList = remember(courseStatsList, timetableSlots) {
+        val calendar = java.util.Calendar.getInstance()
+        val todayIndex = when (calendar.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.MONDAY -> 1
+            java.util.Calendar.TUESDAY -> 2
+            java.util.Calendar.WEDNESDAY -> 3
+            java.util.Calendar.THURSDAY -> 4
+            java.util.Calendar.FRIDAY -> 5
+            java.util.Calendar.SATURDAY -> 6
+            else -> -1
+        }
+        
+        if (todayIndex == -1) {
+            courseStatsList
+        } else {
+            // Find unique non-null courseIds in today's timetable slots, sorted by periodId
+            val todayCourseIds = timetableSlots
+                .filter { it.dayOfWeek == todayIndex }
+                .sortedBy { it.periodId }
+                .map { it.courseId }
+                .filterNotNull()
+                .distinct()
+                
+            // Put scheduled courses first (in their timetable order), and unscheduled courses at the bottom
+            val scheduledStats = todayCourseIds.mapNotNull { id ->
+                courseStatsList.find { it.course.id == id }
+            }
+            
+            val unscheduledStats = courseStatsList.filter { stat ->
+                stat.course.id !in todayCourseIds
+            }
+            
+            scheduledStats + unscheduledStats
+        }
+    }
 
     // Mean Overall Attendance computation
     val overallPercentage = remember(courseStatsList) {
@@ -128,14 +166,14 @@ fun HomeScreen(
             }
 
             // --- EMPTY STATE ---
-            if (courseStatsList.isEmpty()) {
+            if (orderedCourseStatsList.isEmpty()) {
                 item {
                     EmptyStatePlaceholder(onAddClick = { showCreateDialog = true })
                 }
             }
 
             // --- LIST OF SUBJECT CARDS ---
-            items(courseStatsList, key = { it.course.id }) { stat ->
+            items(orderedCourseStatsList, key = { it.course.id }) { stat ->
                 val isExpanded = expandedCourseId == stat.course.id
                 
                 SwipeableSubjectCard(

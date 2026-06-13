@@ -589,6 +589,14 @@ class AttendanceViewModel(
         return success
     }
 
+    fun resetAllData() {
+        viewModelScope.launch {
+            repository.resetAllData()
+            _selectedDate.value = getTodayDateString()
+            NotificationScheduler.scheduleTodayNotifications(context)
+        }
+    }
+
     // --- Shared Utilities ---
     private fun getTodayDateString(): String {
         val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())

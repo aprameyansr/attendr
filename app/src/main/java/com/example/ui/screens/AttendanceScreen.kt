@@ -198,7 +198,7 @@ fun AttendanceScreen(
             shape = CircleShape,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 90.dp, end = 24.dp)
+                .padding(bottom = 24.dp, end = 24.dp)
                 .testTag("attendance_extra_class_fab")
         ) {
             Icon(Icons.Filled.Add, contentDescription = "Add Extra Session")

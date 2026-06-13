@@ -203,7 +203,7 @@ fun TimetableScreen(
             contentColor = Color.Black,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 90.dp, end = 24.dp)
+                .padding(bottom = 24.dp, end = 24.dp)
                 .testTag("timetable_edit_fab"),
             shape = CircleShape
         ) {
