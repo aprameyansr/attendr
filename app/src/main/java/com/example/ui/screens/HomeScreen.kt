@@ -18,6 +18,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -250,6 +254,7 @@ fun HomeScreen(
         // --- SUBJECT CREATION DIALOG SHEET ---
         if (showCreateDialog) {
             SubjectCreateDialog(
+                existingColors = courseStatsList.map { it.course.color },
                 onDismiss = { showCreateDialog = false },
                 onSave = { name, color, icon, mode, sessions, units, initialHeld, initialAttended, target, hoursPer ->
                     viewModel.createCourse(
@@ -562,6 +567,7 @@ fun SwipeableSubjectCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SubjectCreateDialog(
+    existingColors: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (name: String, color: String, icon: String, mode: String, sessions: Int, units: Int, initialHeld: Int, initialAttended: Int, target: Int, hoursPer: Int) -> Unit
 ) {
@@ -572,9 +578,17 @@ fun SubjectCreateDialog(
     var selectedIcon by remember { mutableStateOf("book") }
     var userOverriddenIcon by remember { mutableStateOf(false) }
 
-    var selectedColorIdx by remember { mutableStateOf(0) }
-    
-    val colorsList = listOf("#A78BFA", "#F43F5E", "#06B6D4", "#10B981", "#F59E0B", "#EC4899", "#8B5CF6")
+    val colorsList = remember {
+        mutableStateListOf("#A78BFA", "#F43F5E", "#06B6D4", "#10B981", "#F59E0B", "#EC4899", "#8B5CF6")
+    }
+
+    val initialColorIdx = remember(existingColors) {
+        val upperExisting = existingColors.map { it.uppercase() }
+        val index = colorsList.indexOfFirst { color -> color.uppercase() !in upperExisting }
+        if (index != -1) index else 0
+    }
+    var selectedColorIdx by remember(initialColorIdx) { mutableStateOf(initialColorIdx) }
+    var showColorWheelDialog by remember { mutableStateOf(false) }
     
     var periodsPerSession by remember { mutableStateOf(1) }
     var attendanceUnitsPerSession by remember { mutableStateOf(1) }
@@ -689,6 +703,24 @@ fun SubjectCreateDialog(
                                         shape = CircleShape
                                     )
                                     .clickable { selectedColorIdx = index }
+                            )
+                        }
+
+                        // Custom color picker "+" button
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(CardSurfaceColor)
+                                .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                .clickable { showColorWheelDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add custom color",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -895,6 +927,22 @@ fun SubjectCreateDialog(
             }
         }
     )
+
+    if (showColorWheelDialog) {
+        ColorWheelPickerDialog(
+            onDismiss = { showColorWheelDialog = false },
+            onColorSelected = { hexColor ->
+                val existingIndex = colorsList.indexOfFirst { it.equals(hexColor, ignoreCase = true) }
+                if (existingIndex != -1) {
+                    selectedColorIdx = existingIndex
+                } else {
+                    colorsList.add(hexColor)
+                    selectedColorIdx = colorsList.size - 1
+                }
+                showColorWheelDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -931,7 +979,7 @@ fun EmptyStatePlaceholder(onAddClick: () -> Unit) {
             )
 
             Text(
-                "Keep track of academic semesters without friction. Add your first subject to get going.",
+                "Keep track of academic courses without friction. Add your first subject to get going.",
                 fontSize = 12.sp,
                 color = TextSecondaryColor,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -949,4 +997,214 @@ fun EmptyStatePlaceholder(onAddClick: () -> Unit) {
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ColorWheelPickerDialog(
+    onDismiss: () -> Unit,
+    onColorSelected: (String) -> Unit
+) {
+    var hsv by remember { mutableStateOf(floatArrayOf(0f, 1f, 1f)) }
+    var hexInput by remember { mutableStateOf("#FF0000") }
+    var isUpdatingFromField by remember { mutableStateOf(false) }
+
+    // Synchronize selected color to Hex text field
+    LaunchedEffect(hsv) {
+        if (!isUpdatingFromField) {
+            val colorInt = android.graphics.Color.HSVToColor(hsv)
+            val r = (colorInt shr 16) and 0xFF
+            val g = (colorInt shr 8) and 0xFF
+            val b = colorInt and 0xFF
+            hexInput = String.format("#%02X%02X%02X", r, g, b)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Pick Custom Color",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Interactive Color Wheel
+                var wheelSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                
+                Box(
+                    modifier = Modifier
+                        .size(200.dp)
+                        .onSizeChanged { wheelSize = it }
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    if (wheelSize.width > 0 && wheelSize.height > 0) {
+                                        val cx = wheelSize.width / 2f
+                                        val cy = wheelSize.height / 2f
+                                        val dx = offset.x - cx
+                                        val dy = offset.y - cy
+                                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                        val radius = kotlin.math.min(wheelSize.width, wheelSize.height) / 2f
+                                        
+                                        val angleRad = kotlin.math.atan2(dy, dx)
+                                        var angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
+                                        if (angleDeg < 0) {
+                                            angleDeg += 360f
+                                        }
+                                        val sat = (dist / radius).coerceIn(0f, 1f)
+                                        hsv = floatArrayOf(angleDeg, sat, 1f)
+                                    }
+                                },
+                                onDrag = { change, _ ->
+                                    if (wheelSize.width > 0 && wheelSize.height > 0) {
+                                        val cx = wheelSize.width / 2f
+                                        val cy = wheelSize.height / 2f
+                                        val dx = change.position.x - cx
+                                        val dy = change.position.y - cy
+                                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                        val radius = kotlin.math.min(wheelSize.width, wheelSize.height) / 2f
+                                        
+                                        val angleRad = kotlin.math.atan2(dy, dx)
+                                        var angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
+                                        if (angleDeg < 0) {
+                                            angleDeg += 360f
+                                        }
+                                        val sat = (dist / radius).coerceIn(0f, 1f)
+                                        hsv = floatArrayOf(angleDeg, sat, 1f)
+                                    }
+                                }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val sweepColors = listOf(
+                        Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
+                        Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF), Color(0xFFFF0000)
+                    )
+                    
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val radius = size.minDimension / 2f
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        
+                        // Draw hue sweep wheel
+                        drawCircle(
+                            brush = Brush.sweepGradient(sweepColors, center),
+                            radius = radius,
+                            center = center
+                        )
+                        
+                        // Draw saturation radial ramp
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(Color.White, Color.Transparent),
+                                center = center,
+                                radius = radius
+                            ),
+                            radius = radius,
+                            center = center
+                        )
+                        
+                        // Selection indicator math
+                        val selectAngleRad = Math.toRadians((hsv[0]).toDouble())
+                        val selectDist = hsv[1] * radius
+                        val selX = center.x + selectDist * kotlin.math.cos(selectAngleRad).toFloat()
+                        val selY = center.y + selectDist * kotlin.math.sin(selectAngleRad).toFloat()
+                        
+                        drawCircle(
+                            color = Color.White,
+                            radius = 8.dp.toPx(),
+                            center = Offset(selX, selY),
+                            style = Stroke(width = 2.dp.toPx())
+                        )
+                        drawCircle(
+                            color = Color.Black,
+                            radius = 6.dp.toPx(),
+                            center = Offset(selX, selY),
+                            style = Stroke(width = 1.dp.toPx())
+                        )
+                    }
+                }
+
+                // Row with Preview Color box and details
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Circular Color Preview
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color(android.graphics.Color.HSVToColor(hsv)))
+                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                    )
+
+                    // HEX text field input
+                    OutlinedTextField(
+                        value = hexInput,
+                        onValueChange = { input ->
+                            var sanitized = input.trim()
+                            if (!sanitized.startsWith("#")) {
+                                sanitized = "#$sanitized"
+                            }
+                            hexInput = sanitized
+                            val clean = sanitized.removePrefix("#")
+                            if (clean.length == 6) {
+                                try {
+                                    isUpdatingFromField = true
+                                    val r = clean.substring(0, 2).toInt(16)
+                                    val g = clean.substring(2, 4).toInt(16)
+                                    val b = clean.substring(4, 6).toInt(16)
+                                    val newHsv = FloatArray(3)
+                                    android.graphics.Color.RGBToHSV(r, g, b, newHsv)
+                                    hsv = newHsv
+                                } catch (e: Exception) {
+                                    // Invalid hex format, keep current hsv
+                                } finally {
+                                    isUpdatingFromField = false
+                                }
+                            }
+                        },
+                        label = { Text("Hex Code", color = TextSecondaryColor) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryColor,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
+                            focusedLabelColor = PrimaryColor,
+                            unfocusedLabelColor = TextSecondaryColor,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onColorSelected(hexInput)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor)
+            ) {
+                Text("Select", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondaryColor)
+            }
+        },
+        containerColor = SurfaceColor,
+        shape = RoundedCornerShape(16.dp)
+    )
 }

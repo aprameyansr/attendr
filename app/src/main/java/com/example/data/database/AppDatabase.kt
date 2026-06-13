@@ -17,7 +17,7 @@ import com.example.data.model.*
         SettingEntity::class,
         NotificationLog::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -39,6 +39,9 @@ class AttendanceViewModel(
     private val context: Context get() = getApplication()
 
     // --- State Flows ---
+    private val _selectedDate = MutableStateFlow(getTodayDateString())
+    val selectedDate: StateFlow<String> = _selectedDate.asStateFlow()
+
     val courses: StateFlow<List<Course>> = repository.getAllCoursesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -48,8 +51,15 @@ class AttendanceViewModel(
     val periods: StateFlow<List<PeriodDefinition>> = repository.getAllPeriodsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val timetableSlots: StateFlow<List<TimetableSlot>> = repository.getAllSlotsFlow()
+    val rawTimetableSlots: StateFlow<List<TimetableSlot>> = repository.getAllSlotsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val timetableSlots: StateFlow<List<TimetableSlot>> = combine(selectedDate, rawTimetableSlots) { date, slots ->
+        val weekMonday = getMondayOfWeek(date)
+        slots.filter {
+            it.effectiveWeekStart <= weekMonday && (it.retiredWeekStart == null || it.retiredWeekStart > weekMonday)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val overrides: StateFlow<List<TemporaryScheduleOverride>> = repository.getAllOverridesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -146,9 +156,6 @@ class AttendanceViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- Live Today Timetable Slots Flow ---
-    private val _selectedDate = MutableStateFlow(getTodayDateString())
-    val selectedDate: StateFlow<String> = _selectedDate.asStateFlow()
-
     val todaySlots: StateFlow<List<MergedSlot>> = combine(selectedDate, timetableSlots, overrides, periods, courses) { date, _, _, _, _ ->
         val calendar = Calendar.getInstance()
         val parts = date.split("-")
@@ -396,22 +403,54 @@ class AttendanceViewModel(
     // --- Timetable Operations ---
     fun updateTimetableSlot(dayOfWeek: Int, periodId: Int, courseId: Int?) {
         viewModelScope.launch {
-            val slots = timetableSlots.value.filter { it.dayOfWeek == dayOfWeek }
-            val existing = slots.find { it.periodId == periodId }
-            if (existing != null) {
-                if (courseId == null) {
-                    repository.deleteSlot(existing)
+            val currentMonday = getMondayOfWeek(_selectedDate.value)
+            
+            // Get all slots for this day from database (both current, past, futures)
+            val allSlotsForDay = repository.getSlotsForDay(dayOfWeek)
+            
+            // Find active slot for this period in current week
+            val activeSlot = allSlotsForDay.find {
+                it.periodId == periodId &&
+                it.effectiveWeekStart <= currentMonday &&
+                (it.retiredWeekStart == null || it.retiredWeekStart > currentMonday)
+            }
+
+            if (activeSlot != null) {
+                if (activeSlot.effectiveWeekStart == currentMonday) {
+                    // Created or changed in this same week - edit directly
+                    if (courseId == null) {
+                        repository.deleteSlot(activeSlot)
+                    } else {
+                        repository.updateSlot(activeSlot.copy(courseId = courseId))
+                    }
                 } else {
-                    repository.updateSlot(existing.copy(courseId = courseId))
+                    // Created in a past week - retire it and create new
+                    repository.updateSlot(activeSlot.copy(retiredWeekStart = currentMonday))
+                    if (courseId != null) {
+                        repository.insertSlot(
+                            TimetableSlot(
+                                dayOfWeek = dayOfWeek,
+                                periodId = periodId,
+                                courseId = courseId,
+                                orderIndex = allSlotsForDay.size,
+                                effectiveWeekStart = currentMonday,
+                                retiredWeekStart = null
+                            )
+                        )
+                    }
                 }
             } else if (courseId != null) {
-                val newSlot = TimetableSlot(
-                    dayOfWeek = dayOfWeek,
-                    periodId = periodId,
-                    courseId = courseId,
-                    orderIndex = slots.size
+                // No active slot exists - create a new one starting this week
+                repository.insertSlot(
+                    TimetableSlot(
+                        dayOfWeek = dayOfWeek,
+                        periodId = periodId,
+                        courseId = courseId,
+                        orderIndex = allSlotsForDay.size,
+                        effectiveWeekStart = currentMonday,
+                        retiredWeekStart = null
+                    )
                 )
-                repository.insertSlot(newSlot)
             }
             NotificationScheduler.scheduleTodayNotifications(context)
         }
@@ -419,13 +458,36 @@ class AttendanceViewModel(
 
     fun reorderTimetableSlot(dayOfWeek: Int, fromIndex: Int, toIndex: Int) {
         viewModelScope.launch {
-            val list = repository.getSlotsForDay(dayOfWeek).toMutableList()
-            if (fromIndex in list.indices && toIndex in list.indices) {
-                val target = list.removeAt(fromIndex)
-                list.add(toIndex, target)
-                // update indexes
-                list.forEachIndexed { idx, slot ->
-                    repository.updateSlot(slot.copy(orderIndex = idx))
+            val currentMonday = getMondayOfWeek(_selectedDate.value)
+            
+            // Get all slots for day
+            val allSlots = repository.getSlotsForDay(dayOfWeek)
+            // Filter only active slots
+            val activeSlots = allSlots.filter {
+                it.effectiveWeekStart <= currentMonday && (it.retiredWeekStart == null || it.retiredWeekStart > currentMonday)
+            }.sortedBy { it.orderIndex }.toMutableList()
+            
+            if (fromIndex in activeSlots.indices && toIndex in activeSlots.indices) {
+                val target = activeSlots.removeAt(fromIndex)
+                activeSlots.add(toIndex, target)
+                
+                // Update or version each slot's orderIndex
+                activeSlots.forEachIndexed { idx, slot ->
+                    if (slot.orderIndex != idx) {
+                        if (slot.effectiveWeekStart == currentMonday) {
+                            repository.updateSlot(slot.copy(orderIndex = idx))
+                        } else {
+                            repository.updateSlot(slot.copy(retiredWeekStart = currentMonday))
+                            repository.insertSlot(
+                                slot.copy(
+                                    id = 0,
+                                    orderIndex = idx,
+                                    effectiveWeekStart = currentMonday,
+                                    retiredWeekStart = null
+                                )
+                            )
+                        }
+                    }
                 }
             }
             NotificationScheduler.scheduleTodayNotifications(context)
@@ -434,20 +496,39 @@ class AttendanceViewModel(
 
     fun copyTimetableDay(fromDay: Int, toDay: Int) {
         viewModelScope.launch {
-            val source = repository.getSlotsForDay(fromDay)
-            val targets = repository.getSlotsForDay(toDay)
+            val currentMonday = getMondayOfWeek(_selectedDate.value)
             
-            // Delete targets
-            targets.forEach { repository.deleteSlot(it) }
+            // 1. Get source active slots
+            val allSourceSlots = repository.getSlotsForDay(fromDay)
+            val activeSourceSlots = allSourceSlots.filter {
+                it.effectiveWeekStart <= currentMonday && (it.retiredWeekStart == null || it.retiredWeekStart > currentMonday)
+            }
             
-            // Insert duplicates
-            source.forEach { slot ->
+            // 2. Get target active slots
+            val allTargetSlots = repository.getSlotsForDay(toDay)
+            val activeTargetSlots = allTargetSlots.filter {
+                it.effectiveWeekStart <= currentMonday && (it.retiredWeekStart == null || it.retiredWeekStart > currentMonday)
+            }
+            
+            // 3. Retire / delete target slots
+            activeTargetSlots.forEach { slot ->
+                if (slot.effectiveWeekStart == currentMonday) {
+                    repository.deleteSlot(slot)
+                } else {
+                    repository.updateSlot(slot.copy(retiredWeekStart = currentMonday))
+                }
+            }
+            
+            // 4. Copy source slots with current week as effective start
+            activeSourceSlots.forEach { slot ->
                 repository.insertSlot(
                     TimetableSlot(
                         dayOfWeek = toDay,
                         periodId = slot.periodId,
                         courseId = slot.courseId,
-                        orderIndex = slot.orderIndex
+                        orderIndex = slot.orderIndex,
+                        effectiveWeekStart = currentMonday,
+                        retiredWeekStart = null
                     )
                 )
             }
@@ -605,6 +686,22 @@ class AttendanceViewModel(
             calendar.add(Calendar.DAY_OF_YEAR, 1) // default to Monday if today is Sunday
         }
         return format.format(calendar.time)
+    }
+
+    private fun getMondayOfWeek(dateStr: String): String {
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return try {
+            val date = format.parse(dateStr) ?: Date()
+            val calendar = Calendar.getInstance().apply {
+                time = date
+            }
+            val currentDay = calendar.get(Calendar.DAY_OF_WEEK)
+            val diff = Calendar.MONDAY - currentDay
+            calendar.add(Calendar.DAY_OF_YEAR, if (diff > 0) diff - 7 else diff)
+            format.format(calendar.time)
+        } catch (e: Exception) {
+            "2026-01-01"
+        }
     }
 
     private fun calculateWeekRange(dateStr: String): String {

@@ -50,7 +50,6 @@ fun SettingsScreen(
 
     // Read values from State Map with baseline fallbacks
     val userName = settingsState["user_name"] ?: "Student"
-    val semesterStr = settingsState["semester"] ?: "1"
     val minAttendanceStr = settingsState["min_attendance"] ?: "75"
     val saturdayEnabledStr = settingsState["saturday_enabled"] ?: "false"
     val notificationsEnabledStr = settingsState["notifications_enabled"] ?: "true"
@@ -60,7 +59,6 @@ fun SettingsScreen(
 
     // Temporary values for editing text fields cleanly
     var editName by remember(userName) { mutableStateOf(userName) }
-    var editSemester by remember(semesterStr) { mutableStateOf(semesterStr) }
 
     // Dialog sheets states
     var showBackupDialog by remember { mutableStateOf(false) }
@@ -125,25 +123,6 @@ fun SettingsScreen(
                             ),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
-                        )
-
-                        OutlinedTextField(
-                            value = editSemester,
-                            onValueChange = {
-                                editSemester = it
-                                viewModel.saveSetting("semester", it)
-                            },
-                            label = { Text("Active Semester", color = TextSecondaryColor) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = PrimaryColor,
-                                unfocusedBorderColor = BorderColor
-                            ),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
                         )
                     }
@@ -436,7 +415,7 @@ fun SettingsScreen(
                 }
             }
 
-            // --- RESET SEMESTER DATA ---
+            // --- RESET DATABASE DATA ---
             item {
                 var showResetConfirmDialog by remember { mutableStateOf(false) }
 
@@ -452,8 +431,8 @@ fun SettingsScreen(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("RESET SEMESTER DATA", color = ErrorColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                        Text("Crucial for starting a fresh semester. This will permanently erase all subjects, attendance logs, and custom schedules to restore defaults.", color = TextSecondaryColor, fontSize = 11.sp)
+                        Text("RESET DATABASE DATA", color = ErrorColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Text("This will permanently erase all subjects, attendance logs, and custom schedules. Your user preferences, settings, and student name will remain intact.", color = TextSecondaryColor, fontSize = 11.sp)
                         Spacer(modifier = Modifier.height(4.dp))
 
                         Button(
@@ -475,14 +454,14 @@ fun SettingsScreen(
                         containerColor = SurfaceColor,
                         title = { Text("Reset Entire Database?", color = Color.White, fontWeight = FontWeight.Bold) },
                         text = {
-                            Text("This action is completely irreversible. You will lose all current course progression details, timetable allocations, and overridden days. Ensure you have exported a back-up if you wish to restore it. Do you want to proceed?", color = TextSecondaryColor, fontSize = 13.sp)
+                            Text("This action is completely irreversible. You will lose all current course progression details, timetable allocations, and overridden days. Your student name and basic preferences will be preserved. Do you want to proceed?", color = TextSecondaryColor, fontSize = 13.sp)
                         },
                         confirmButton = {
                             Button(
                                 onClick = {
                                     viewModel.resetAllData()
                                     showResetConfirmDialog = false
-                                    Toast.makeText(context, "Fresh semester initialized! All data cleared.", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Database cleared successfully!", Toast.LENGTH_LONG).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = ErrorColor),
                                 modifier = Modifier.testTag("reset_confirm_confirm")
@@ -587,7 +566,7 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("Attendly DB Backup", copiedJson)
+                            val clip = ClipData.newPlainText("Attendr DB Backup", copiedJson)
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, "Copied backup to clipboard!", Toast.LENGTH_SHORT).show()
                             showBackupDialog = false

@@ -37,13 +37,17 @@ object NotificationScheduler {
 
     suspend fun getDailySlots(db: AppDatabase, dateStr: String, dayOfWeek: Int): List<MergedSlot> {
         val slots = db.timetableDao().getSlotsForDay(dayOfWeek)
+        val weekMonday = getMondayOfWeek(dateStr)
+        val activeSlots = slots.filter {
+            it.effectiveWeekStart <= weekMonday && (it.retiredWeekStart == null || it.retiredWeekStart > weekMonday)
+        }
         val overrides = db.overrideDao().getOverridesForDate(dateStr)
         val periods = db.periodDao().getAllPeriods()
         val courses = db.courseDao().getAllCourses().associateBy { it.id }
 
         val merged = mutableListOf<MergedSlot>()
 
-        for (s in slots) {
+        for (s in activeSlots) {
             val p = periods.find { it.periodNumber == s.periodId } ?: continue
             val ov = overrides.find { it.periodId == s.periodId }
 
@@ -248,5 +252,21 @@ object NotificationScheduler {
         val workManager = WorkManager.getInstance(context)
         workManager.cancelAllWorkByTag("PERIOD_NOTIF")
         Log.d(TAG, "Cancelled all scheduled notifications.")
+    }
+
+    private fun getMondayOfWeek(dateStr: String): String {
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return try {
+            val date = format.parse(dateStr) ?: Date()
+            val calendar = Calendar.getInstance().apply {
+                time = date
+            }
+            val currentDay = calendar.get(Calendar.DAY_OF_WEEK)
+            val diff = Calendar.MONDAY - currentDay
+            calendar.add(Calendar.DAY_OF_YEAR, if (diff > 0) diff - 7 else diff)
+            format.format(calendar.time)
+        } catch (e: Exception) {
+            "2026-01-01"
+        }
     }
 }

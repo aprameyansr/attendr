@@ -2,6 +2,10 @@ package com.example.ui.screens
 
 import android.text.format.DateFormat
 import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,17 +48,47 @@ fun TimetableScreen(
     val periods by viewModel.periods.collectAsState()
     val slots by viewModel.timetableSlots.collectAsState()
     val settingsState by viewModel.settingsState.collectAsState()
-
-    val saturdayEnabled = (settingsState["saturday_enabled"] ?: "false").toBoolean()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+    val allRecords by viewModel.allRecords.collectAsState()
 
     // Screen State variables
     var isEditMode by remember { mutableStateOf(false) }
     var selectedDayIndex by remember { mutableStateOf(1) } // 1 = Monday, 5 = Friday, 6 = Saturday
+
+    val targetDayDateOfCurrentWeek = remember(selectedDate, selectedDayIndex) {
+        try {
+            val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val date = format.parse(selectedDate) ?: Date()
+            val calendar = Calendar.getInstance().apply {
+                time = date
+            }
+            val currentDay = calendar.get(Calendar.DAY_OF_WEEK)
+            val diff = Calendar.MONDAY - currentDay
+            calendar.add(Calendar.DAY_OF_YEAR, if (diff > 0) diff - 7 else diff)
+            calendar.add(Calendar.DAY_OF_YEAR, selectedDayIndex - 1)
+            format.format(calendar.time)
+        } catch (e: Exception) {
+            selectedDate
+        }
+    }
+
+    val readableSelectedDayDate = remember(targetDayDateOfCurrentWeek) {
+        try {
+            val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val outputFormat = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault())
+            val date = inputFormat.parse(targetDayDateOfCurrentWeek) ?: Date()
+            outputFormat.format(date)
+        } catch (e: Exception) {
+            targetDayDateOfCurrentWeek
+        }
+    }
     
     // Dialog state variables
     var showCopyDialog by remember { mutableStateOf(false) }
     var showAddPeriodDialog by remember { mutableStateOf(false) }
     var editingPeriodId by remember { mutableStateOf<Int?>(null) }
+
+    val saturdayEnabled = (settingsState["saturday_enabled"] ?: "false").toBoolean()
 
     val daysList = remember(saturdayEnabled) {
         if (saturdayEnabled) {
@@ -134,25 +168,36 @@ fun TimetableScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (isEditMode) "TIMETABLE EDITOR" else "TODAY'S SCHEDULE GRID",
-                            color = TextSecondaryColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isEditMode) "TIMETABLE EDITOR" else "TODAY'S SCHEDULE GRID",
+                                color = TextSecondaryColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
 
-                        if (isEditMode) {
-                            TextButton(onClick = { showCopyDialog = true }) {
-                                Icon(Icons.Filled.CopyAll, contentDescription = "Copy Schedule", tint = PrimaryColor, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Copy To...", color = PrimaryColor, fontSize = 12.sp)
+                            if (isEditMode) {
+                                TextButton(onClick = { showCopyDialog = true }) {
+                                    Icon(Icons.Filled.CopyAll, contentDescription = "Copy Schedule", tint = PrimaryColor, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Copy To...", color = PrimaryColor, fontSize = 12.sp)
+                                }
                             }
+                        }
+                        if (!isEditMode) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = readableSelectedDayDate,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
@@ -161,12 +206,17 @@ fun TimetableScreen(
                 items(periods, key = { it.id }) { period ->
                     val matchingSlot = slots.find { it.dayOfWeek == selectedDayIndex && it.periodId == period.periodNumber }
                     val activeCourse = courses.find { it.id == matchingSlot?.courseId }
+                    
+                    // Match historic attendance record
+                    val record = allRecords.find { it.date == targetDayDateOfCurrentWeek && it.periodIndex == period.periodNumber }
+                    val attendanceStatus = record?.status ?: "NOT_MARKED"
 
                     TimetableRowCard(
                         period = period,
                         activeCourse = activeCourse,
                         isEditMode = isEditMode,
                         courses = courses,
+                        attendanceStatus = attendanceStatus,
                         onUpdateSlot = { courseId ->
                             viewModel.updateTimetableSlot(selectedDayIndex, period.periodNumber, courseId)
                         },
@@ -265,6 +315,7 @@ fun TimetableRowCard(
     activeCourse: Course?,
     isEditMode: Boolean,
     courses: List<Course>,
+    attendanceStatus: String = "NOT_MARKED",
     onUpdateSlot: (Int?) -> Unit,
     onEditPeriod: () -> Unit
 ) {
@@ -331,32 +382,64 @@ fun TimetableRowCard(
                     .padding(12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    if (activeCourse != null) {
-                        Icon(
-                            imageVector = SubjectIconHelper.getIcon(activeCourse.icon),
-                            contentDescription = null,
-                            tint = Color(android.graphics.Color.parseColor(activeCourse.color)),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = activeCourse.name,
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    } else {
-                        Text(
-                            text = "Free Period / Gaps",
-                            color = TextSecondaryColor,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (activeCourse != null) {
+                            Icon(
+                                imageVector = SubjectIconHelper.getIcon(activeCourse.icon),
+                                contentDescription = null,
+                                tint = Color(android.graphics.Color.parseColor(activeCourse.color)),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = activeCourse.name,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                text = "Free Period / Gaps",
+                                color = TextSecondaryColor,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    if (activeCourse != null && !isEditMode) {
+                        val (statusText, statusColor, statusIcon) = when (attendanceStatus) {
+                            "PRESENT" -> Triple("Present", SuccessColor, Icons.Filled.CheckCircle)
+                            "ABSENT" -> Triple("Absent", ErrorColor, Icons.Filled.Cancel)
+                            "CANCELLED" -> Triple("Cancelled", CancelledColor, Icons.Filled.Block)
+                            else -> Triple("Not Marked", TextSecondaryColor, Icons.Filled.RadioButtonUnchecked)
+                        }
+                        
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = statusIcon,
+                                contentDescription = null,
+                                tint = statusColor,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = statusText,
+                                color = statusColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 

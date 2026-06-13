@@ -58,9 +58,6 @@ class AppRepository(val db: AppDatabase) {
         if (settingDao.getSetting("user_name") == null) {
             settingDao.insertSetting(SettingEntity("user_name", "Student"))
         }
-        if (settingDao.getSetting("semester") == null) {
-            settingDao.insertSetting(SettingEntity("semester", "1"))
-        }
         if (settingDao.getSetting("min_attendance") == null) {
             settingDao.insertSetting(SettingEntity("min_attendance", "75"))
         }
@@ -70,11 +67,40 @@ class AppRepository(val db: AppDatabase) {
         if (settingDao.getSetting("notifications_enabled") == null) {
             settingDao.insertSetting(SettingEntity("notifications_enabled", "true"))
         }
+        if (settingDao.getSetting("theme_color") == null) {
+            settingDao.insertSetting(SettingEntity("theme_color", "#A78BFA"))
+        }
     }
 
     suspend fun resetAllData() = withContext(Dispatchers.IO) {
+        val keepUserName = settingDao.getSetting("user_name")?.value
+        val keepWelcomeCompleted = settingDao.getSetting("welcome_completed")?.value
+        val keepSaturdayEnabled = settingDao.getSetting("saturday_enabled")?.value
+        val keepNotificationsEnabled = settingDao.getSetting("notifications_enabled")?.value
+        val keepMinAttendance = settingDao.getSetting("min_attendance")?.value
+        val keepThemeColor = settingDao.getSetting("theme_color")?.value
+
         db.clearAllTables()
         initializeDefaultsIfEmpty()
+
+        if (keepUserName != null) {
+            settingDao.insertSetting(SettingEntity("user_name", keepUserName))
+        }
+        if (keepWelcomeCompleted != null) {
+            settingDao.insertSetting(SettingEntity("welcome_completed", keepWelcomeCompleted))
+        }
+        if (keepSaturdayEnabled != null) {
+            settingDao.insertSetting(SettingEntity("saturday_enabled", keepSaturdayEnabled))
+        }
+        if (keepNotificationsEnabled != null) {
+            settingDao.insertSetting(SettingEntity("notifications_enabled", keepNotificationsEnabled))
+        }
+        if (keepMinAttendance != null) {
+            settingDao.insertSetting(SettingEntity("min_attendance", keepMinAttendance))
+        }
+        if (keepThemeColor != null) {
+            settingDao.insertSetting(SettingEntity("theme_color", keepThemeColor))
+        }
     }
 
     // --- Courses ---

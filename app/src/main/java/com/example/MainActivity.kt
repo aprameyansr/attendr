@@ -1,10 +1,13 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import androidx.compose.ui.text.font.FontWeight
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -98,39 +101,179 @@ class MainActivity : ComponentActivity() {
 
             MyApplicationTheme {
                 var currentTab by remember { mutableStateOf(AppTab.HOME) }
+                val welcomeCompleted = settingsState["welcome_completed"] == "true"
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        CustomBottomNavigationBar(
-                            selectedTab = currentTab,
-                            onTabSelected = { currentTab = it }
-                        )
-                    },
-                    containerColor = BackgroundColor,
-                    contentWindowInsets = WindowInsets.systemBars // Protect system-level safe zones including status bar and navigation bars
-                ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        AnimatedContent(
-                            targetState = currentTab,
-                            transitionSpec = {
-                                fadeIn() togetherWith fadeOut()
-                            },
-                            label = "screen_transition"
-                        ) { tab ->
-                            when (tab) {
-                                AppTab.TIMETABLE -> TimetableScreen(viewModel = viewModel)
-                                AppTab.ATTENDANCE -> AttendanceScreen(viewModel = viewModel)
-                                AppTab.HOME -> HomeScreen(viewModel = viewModel)
-                                AppTab.CALCULATOR -> CalculatorScreen(viewModel = viewModel)
-                                AppTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
+                if (!welcomeCompleted) {
+                    OnboardingWizard(
+                        onFinished = { runBackgroundRequest ->
+                            viewModel.saveSetting("welcome_completed", "true")
+                            if (runBackgroundRequest) {
+                                currentTab = AppTab.SETTINGS
+                                try {
+                                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                        Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    } else {
+                                        Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    }
+                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    // Fallback to app details settings page
+                                    try {
+                                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = android.net.Uri.fromParts("package", packageName, null)
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        startActivity(intent)
+                                    } catch (ex: Exception) {
+                                        Toast.makeText(this@MainActivity, "Redirect unsupported on this device.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } else {
+                                Toast.makeText(this@MainActivity, "Notifications may not work reliably under deep sleep.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
+                } else {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        bottomBar = {
+                            CustomBottomNavigationBar(
+                                selectedTab = currentTab,
+                                onTabSelected = { currentTab = it }
+                            )
+                        },
+                        containerColor = BackgroundColor,
+                        contentWindowInsets = WindowInsets.systemBars // Protect system-level safe zones including status bar and navigation bars
+                    ) { innerPadding ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                        ) {
+                            AnimatedContent(
+                                targetState = currentTab,
+                                transitionSpec = {
+                                    fadeIn() togetherWith fadeOut()
+                                },
+                                label = "screen_transition"
+                            ) { tab ->
+                                when (tab) {
+                                    AppTab.TIMETABLE -> TimetableScreen(viewModel = viewModel)
+                                    AppTab.ATTENDANCE -> AttendanceScreen(viewModel = viewModel)
+                                    AppTab.HOME -> HomeScreen(viewModel = viewModel)
+                                    AppTab.CALCULATOR -> CalculatorScreen(viewModel = viewModel)
+                                    AppTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
+                                }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OnboardingWizard(onFinished: (Boolean) -> Unit) {
+    var step by remember { mutableStateOf(1) }
+    
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundColor)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 450.dp)
+        ) {
+            if (step == 1) {
+                // Step 1: Greeting screen
+                Icon(
+                    imageVector = Icons.Filled.DateRange,
+                    contentDescription = null,
+                    tint = PrimaryColor,
+                    modifier = Modifier.size(80.dp)
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Welcome to Attendr",
+                    color = Color.White,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Your effortless companion for maintaining grades, tracking timetable schedules, and registering daily checklists cleanly.",
+                    color = TextSecondaryColor,
+                    fontSize = 14.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(
+                    onClick = { step = 2 },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Get Started", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            } else {
+                // Step 2: Background permission request
+                Icon(
+                    imageVector = Icons.Filled.BatteryChargingFull,
+                    contentDescription = null,
+                    tint = PrimaryColor,
+                    modifier = Modifier.size(80.dp)
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Background Performance",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "To guarantee end-of-class notification timers fire reliably under locks, Android requires allowing autostart or unrestricted battery execution inside configurations.",
+                    color = TextSecondaryColor,
+                    fontSize = 14.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "No trackable details or personal locations are gathered. This processes strictly offline for notification accuracy.",
+                    color = TextSecondaryColor.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 16.sp
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(
+                    onClick = { onFinished(true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Filled.Settings, contentDescription = null, tint = Color.Black)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Enable in Settings", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = { onFinished(false) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text("Skip (Not Recommended)", color = ErrorColor, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             }
         }

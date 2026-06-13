@@ -53,7 +53,9 @@ data class TimetableSlot(
     val periodId: Int, // Refers to PeriodDefinition id or periodNumber
     val courseId: Int?, // Refers to Course id, null if free
     val orderIndex: Int = 0, // For reordering classes in day view
-    val isTempChanged: Boolean = false
+    val isTempChanged: Boolean = false,
+    val effectiveWeekStart: String = "2026-01-01",
+    val retiredWeekStart: String? = null
 )
 
 @Entity(tableName = "temporary_schedule_overrides")
